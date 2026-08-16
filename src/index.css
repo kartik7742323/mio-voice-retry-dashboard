@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 antialiased font-sans;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: 'Space Grotesk', Inter, ui-sans-serif, sans-serif;
+  }
+
+  :root {
+    --color-sent:      #3b82f6;
+    --color-delivered: #22c55e;
+    --color-failed:    #ef4444;
+    --color-no-retry:  #22c55e;
+    --color-first:     #84cc16;
+    --color-second:    #eab308;
+    --color-third:     #f97316;
+    --color-fourth:    #ef4444;
+    --color-fifth:     #dc2626;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700/60 shadow-sm;
+  }
+
+  .card-header {
+    @apply px-6 py-4 border-b border-slate-100 dark:border-slate-700/60;
+  }
+
+  .card-header h2 {
+    @apply text-base font-bold text-slate-800 dark:text-slate-100;
+  }
+
+  .card-body {
+    @apply px-6 py-5;
+  }
+
+  .badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+}
+
+/* Remove browser focus outline on Recharts SVG wrapper */
+.recharts-wrapper,
+.recharts-wrapper:focus,
+.recharts-wrapper:focus-visible,
+.recharts-wrapper svg,
+.recharts-wrapper svg:focus {
+  outline: none !important;
+}

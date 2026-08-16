@@ -1,0 +1,4 @@
+college_id,college_name,instance,campaign_id,campaign_name,agent_id,agent_name,retry_enabled,total_unique_contacts_alltime,total_calls_alltime,connected_first_alltime,launch_date,status
+5001,Sunrise College of Arts & Science,in11,5001001,June Intake - UG Calling,AG002,Priya Nair,1,47912,101540,13035,2026-06-10,running
+5001,Sunrise College of Arts & Science,in11,5001002,MBA Lateral - Reminder,AG005,Vikram Singh,1,18400,37220,4700,2026-06-15,running
+5003,Lotus College of Management,in11,5003001,Scholarship Follow-up,AG011,Aria (Bot),0,62450,62450,16820,2026-05-28,completed

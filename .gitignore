@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.local
+
+# Raw data files — large, not committed
+comm-all-mongo-data-*/
+
+# Verification screenshots
+verify-*.png
