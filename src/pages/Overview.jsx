@@ -94,9 +94,11 @@ export default function Overview({ data }) {
   const a = data.adoption
   const institutions = data.by_institution
 
+  const [minDialed, setMinDialed] = useState(1000)
   const adopters = institutions.filter(i => i.retry_enabled && i.dialed > 0)
   // rank by connect % descending (highest first); break ties by larger dialed volume
   const top10 = [...adopters]
+    .filter(i => i.dialed >= (Number(minDialed) || 0))
     .sort((x, y) => (y.connect_pct ?? 0) - (x.connect_pct ?? 0) || (y.dialed ?? 0) - (x.dialed ?? 0))
     .slice(0, 10)
 
@@ -175,6 +177,7 @@ export default function Overview({ data }) {
             <KPICard
               label="Unique Leads Dialed"
               value={fmtNum(g.dialed)}
+              sub={`${fmtFull(g.dialed)} leads`}
               icon={PhoneOutgoing}
               iconBg="bg-blue-50 dark:bg-blue-900/30"
               iconColor="text-blue-600 dark:text-blue-400"
@@ -326,7 +329,27 @@ export default function Overview({ data }) {
       <NoAdoptionRiskTable institutions={institutions} navigate={navigate} extractedDate={data.extracted_date} />
 
       {/* Top 10 */}
-      <InstitutionRankTable title="Top 10 Adopters by Connect Rate" rows={top10} navigate={navigate} />
+      <InstitutionRankTable
+        title="Top 10 Adopters by Connect Rate"
+        rows={top10}
+        navigate={navigate}
+        headerRight={
+          <div className="flex items-center gap-2">
+            <label htmlFor="minDialed" className="text-xs font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap">
+              Min unique leads dialed
+            </label>
+            <input
+              id="minDialed"
+              type="number"
+              min="0"
+              step="100"
+              value={minDialed}
+              onChange={e => setMinDialed(e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value, 10) || 0))}
+              className="w-24 h-8 px-2 rounded-lg text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500"
+            />
+          </div>
+        }
+      />
     </div>
   )
 }
@@ -497,12 +520,17 @@ function NoAdoptionRiskTable({ institutions, navigate, extractedDate }) {
   )
 }
 
-function InstitutionRankTable({ title, subtitle, rows, navigate }) {
+function InstitutionRankTable({ title, subtitle, rows, navigate, headerRight }) {
   return (
     <div className="card">
       <div className="card-header">
-        <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{title}</h2>
-        {subtitle && <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{subtitle}</p>}
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{title}</h2>
+            {subtitle && <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{subtitle}</p>}
+          </div>
+          {headerRight}
+        </div>
       </div>
       <div className="overflow-x-auto">
         <table className="min-w-full text-xs">
