@@ -70,7 +70,9 @@ function onData(v) {
 
   // ── campaign (row grain) — drill-down + adoption/config ──
   let cp = camps.get(clog)
-  if (!cp) { cp = { iid, server, maxC: 0, out: zero() }; camps.set(clog, cp) }
+  if (!cp) { cp = { iid, server, maxC: 0, out: zero(), dmin: date, dmax: date }; camps.set(clog, cp) }
+  if (date < cp.dmin) cp.dmin = date
+  if (date > cp.dmax) cp.dmax = date
   if (C > cp.maxC) cp.maxC = C
   cp.out.dialed++; cp.out.attempts += attempts
   let cb = null
@@ -208,7 +210,7 @@ function build() {
   const campaignsByInst = new Map()
   for (const [clog, cp] of camps) {
     const o = finalize(cp.out)
-    const row = { campaign_id: clog, retry_enabled: cp.maxC > 0 ? 1 : 0, mode: null, configured_retries: cp.maxC,
+    const row = { campaign_id: clog, date: cp.dmin, date_end: cp.dmax, retry_enabled: cp.maxC > 0 ? 1 : 0, mode: null, configured_retries: cp.maxC,
       dialed: o.dialed, connected: o.connected, not_connected: o.not_connected,
       first_attempt: o.first_attempt, r1: o.r1, r2: o.r2, r3: o.r3, r4: o.r4, r5: o.r5,
       retry_exhausted: o.retry_exhausted, next_retry_scheduled: o.next_retry_scheduled,

@@ -1,16 +1,19 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { createColumnHelper } from '@tanstack/react-table'
-import { ArrowLeft, Loader2, PhoneOutgoing, PhoneCall, TrendingUp, Zap, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Loader2, PhoneOutgoing, PhoneCall, TrendingUp, Zap, RefreshCw, Calendar, X } from 'lucide-react'
 import KPICard from '../components/KPICard'
 import AttemptFunnelChart from '../components/AttemptFunnelChart'
 import SortableTable from '../components/SortableTable'
 import { fmtNum, fmtPct, fmtFull, connectColor, liftColor } from '../lib/format'
 import { institutionLabel } from '../lib/accounts'
 import { useFilter } from '../context/FilterContext'
-import { computeInstitution } from '../lib/filterData'
+import { computeInstitution, DATE_MIN, DATE_MAX } from '../lib/filterData'
 
 const col = createColumnHelper()
+
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const fmtDay = iso => { if (!iso) return '—'; const [, m, d] = iso.split('-'); return `${+d} ${MON[+m - 1]}` }
 
 function RetryCell({ v, color = 'text-lime-600' }) {
   if (!v) return <span className="text-slate-300 dark:text-slate-600">—</span>
@@ -21,6 +24,14 @@ const campaignColumns = [
   col.accessor('campaign_id', {
     header: 'Campaign ID',
     cell: info => <span className="font-mono text-xs text-slate-700 dark:text-slate-300">{info.getValue()}</span>,
+  }),
+  col.accessor('date', {
+    header: 'Campaign Date',
+    cell: info => {
+      const r = info.row.original
+      const s = fmtDay(r.date), e = fmtDay(r.date_end)
+      return <span className="text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">{s === e ? s : `${s} – ${e}`}</span>
+    },
   }),
   col.accessor('retry_enabled', {
     header: 'Retry',
@@ -80,6 +91,19 @@ export default function InstitutionDetail() {
   const [campaigns, setCampaigns] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [campFrom, setCampFrom] = useState('')
+  const [campTo, setCampTo] = useState('')
+
+  const filteredCampaigns = useMemo(() => {
+    if (!campaigns) return campaigns
+    if (!campFrom && !campTo) return campaigns
+    return campaigns.filter(c => {
+      const start = c.date, end = c.date_end || c.date
+      if (campFrom && end < campFrom) return false      // campaign ended before range
+      if (campTo && start > campTo) return false          // campaign started after range
+      return true
+    })
+  }, [campaigns, campFrom, campTo])
 
   useEffect(() => {
     setLoading(true)
@@ -213,10 +237,43 @@ export default function InstitutionDetail() {
       {/* Campaign Table */}
       <div className="card">
         <div className="card-header">
-          <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-            Campaigns ({inst.campaigns.toLocaleString()})
-          </h2>
-          <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Sorted by total dialed descending</p>
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                Campaigns ({(campaigns ? filteredCampaigns.length : inst.campaigns).toLocaleString()})
+              </h2>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Sorted by total dialed descending</p>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Calendar size={14} className="text-slate-400 dark:text-slate-500 shrink-0" />
+              <input
+                type="date"
+                value={campFrom}
+                min={DATE_MIN}
+                max={campTo || DATE_MAX}
+                onChange={e => setCampFrom(e.target.value)}
+                className="h-8 px-2 rounded-lg text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 [color-scheme:light] dark:[color-scheme:dark]"
+              />
+              <span className="text-slate-300 dark:text-slate-600 text-xs">→</span>
+              <input
+                type="date"
+                value={campTo}
+                min={campFrom || DATE_MIN}
+                max={DATE_MAX}
+                onChange={e => setCampTo(e.target.value)}
+                className="h-8 px-2 rounded-lg text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 [color-scheme:light] dark:[color-scheme:dark]"
+              />
+              {(campFrom || campTo) && (
+                <button
+                  onClick={() => { setCampFrom(''); setCampTo('') }}
+                  title="Clear date filter"
+                  className="inline-flex items-center h-8 px-2 rounded-lg text-xs font-medium text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:text-red-600 dark:hover:text-red-400 hover:border-red-300"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
         <div className="card-body">
           {loading && (
@@ -232,7 +289,7 @@ export default function InstitutionDetail() {
           )}
           {campaigns && (
             <SortableTable
-              data={campaigns}
+              data={filteredCampaigns}
               columns={campaignColumns}
               globalFilterPlaceholder="Search campaign ID…"
               pageSize={50}
