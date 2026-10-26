@@ -20,7 +20,7 @@ import { dirname, join } from 'node:path'
 
 const SCRIPTS = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(SCRIPTS, '..')
-const FILE = 'C:/Users/Kartik/Downloads/data34.csv'
+const FILE = 'C:/Users/Kartik/Downloads/retry_data_and_adoption.csv'
 const NEED = ['tenant_id', 'source_db', 'communication_log_id', 'added_on', 'created_on',
   'answered', 'status', 'retry_count', 'configured_retry_count', 'user_id']
 
