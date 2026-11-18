@@ -14,6 +14,7 @@ import RetryCountChart from '../components/RetryCountChart'
 import AutomationAdoptionGap from '../components/AutomationAdoptionGap'
 import { fmtNum, fmtPct, fmtFull, connectColor, formatDate, MODE_COLORS } from '../lib/format'
 import { institutionLabel } from '../lib/accounts'
+import retryOffCampaigns from '../data/retry_off_campaigns.json'
 import { downloadPeriodComparison, downloadNoAdoptionRisk } from '../lib/download'
 
 const col = createColumnHelper()
@@ -70,6 +71,21 @@ const NON_RETRY_REASONS = {
   6962: 'Retry is not enabled in automation because it is a regular-interval automation.',
 }
 const DEFAULT_NON_RETRY_REASON = 'No calls after the retry release — only testing calls (~5–10).'
+
+// Reasons a campaign (communication_log_id) has retry OFF — keyed by automation_list_id.
+const CAMPAIGN_OFF_REASONS = {
+  '7608':  'Automation has been completed — hence no retries for its jobs.',
+  '56299': 'Regular-interval job — retry is not enabled on it.',
+  '56775': 'Automation completed.',
+  '56158': 'Regular-interval automation.',
+}
+const MANUAL_OFF_REASON = 'Unidentified — email will be sent to CS to explain the importance of retry so the client doesn’t miss using it.'
+const AUTOMATION_OFF_DEFAULT = 'Automation — retry not enabled (reason to be confirmed with CS).'
+function campaignOffReason(row) {
+  if (row.type !== 'automation') return MANUAL_OFF_REASON
+  for (const id of String(row.auto || '').split(';')) if (CAMPAIGN_OFF_REASONS[id]) return CAMPAIGN_OFF_REASONS[id]
+  return AUTOMATION_OFF_DEFAULT
+}
 
 function AdoptionTile({ icon: Icon, label, value, total, pct, tone = 'indigo', onInfo }) {
   const tones = {
@@ -129,6 +145,11 @@ export default function Overview({ data }) {
   const nonAdopters = institutions
     .filter(i => !i.retry_enabled && i.dialed > 0)
     .sort((x, y) => (y.dialed ?? 0) - (x.dialed ?? 0))
+
+  // Retry-OFF campaigns (for the Campaigns-on-Retry ⓘ popup) — scoped to the colleges in view
+  const [showCampOff, setShowCampOff] = useState(false)
+  const viewIids = new Set(institutions.map(i => i.institution_id))
+  const campOffRows = retryOffCampaigns.filter(r => viewIids.has(r.iid))
 
   const retryTotal = g.r1 + g.r2 + g.r3 + g.r4 + g.r5
   const firstPct = g.dialed > 0 ? g.first_attempt / g.dialed * 100 : 0
@@ -292,7 +313,7 @@ export default function Overview({ data }) {
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
         <AdoptionTile icon={Building2} label="Institutes on Retry" value={a.retry_institutions} total={a.voice_institutions} pct={instAdoptPct} tone="indigo" onInfo={() => setShowNonRetry(true)} />
-        <AdoptionTile icon={Layers}    label="Campaigns on Retry"  value={a.retry_campaigns}    total={a.voice_campaigns}    pct={campAdoptPct} tone="sky" />
+        <AdoptionTile icon={Layers}    label="Campaigns on Retry"  value={a.retry_campaigns}    total={a.voice_campaigns}    pct={campAdoptPct} tone="sky" onInfo={() => setShowCampOff(true)} />
         <AdoptionTile icon={PhoneOutgoing} label="Leads Dialed via Retry" value={a.dialed_retry} total={a.dialed_total} pct={dialedAdoptPct} tone="violet" />
       </div>
 
@@ -417,6 +438,60 @@ export default function Overview({ data }) {
                       <td className="px-3 py-2.5 text-right font-medium text-slate-700 dark:text-slate-300">{fmtFull(i.dialed)}</td>
                       <td className={`px-3 py-2.5 text-right font-semibold ${connectColor(i.connect_pct)}`}>{fmtPct(i.connect_pct)}</td>
                       <td className="px-4 py-2.5 text-slate-600 dark:text-slate-400 max-w-[340px]">{NON_RETRY_REASONS[i.institution_id] || DEFAULT_NON_RETRY_REASON}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Retry-OFF campaigns popup (opened from the Campaigns-on-Retry ⓘ) */}
+      {showCampOff && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" onClick={() => setShowCampOff(false)}>
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-6xl max-h-[85vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100">Campaigns not on Retry ({fmtFull(campOffRows.length)})</h2>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                  {fmtFull(campOffRows.filter(r => r.type === 'automation').length)} automation · {fmtFull(campOffRows.filter(r => r.type !== 'automation').length)} manual / Lead Manager — with the reason retry isn't on.
+                </p>
+              </div>
+              <button onClick={() => setShowCampOff(false)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shrink-0">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="overflow-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-slate-50 dark:bg-slate-900/60">
+                  <tr className="border-b border-slate-200 dark:border-slate-700 text-left">
+                    <th className="px-4 py-2.5 font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide text-[10px]">College</th>
+                    <th className="px-3 py-2.5 font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide text-[10px]">Comm Log ID</th>
+                    <th className="px-3 py-2.5 font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide text-[10px]">Automation List ID</th>
+                    <th className="px-3 py-2.5 font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide text-[10px]">Type</th>
+                    <th className="px-3 py-2.5 font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide text-[10px] text-right">Dialed</th>
+                    <th className="px-3 py-2.5 font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide text-[10px] text-right">Connect %</th>
+                    <th className="px-4 py-2.5 font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide text-[10px]">Reason retry not used</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {campOffRows.map((r, idx) => (
+                    <tr key={r.clog + '-' + idx} className="border-b border-slate-100 dark:border-slate-700/50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700/30">
+                      <td className="px-4 py-2">
+                        <p className="font-medium text-slate-800 dark:text-slate-200 truncate max-w-[180px]">{institutionLabel(r.iid)}</p>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500">#{r.iid}</p>
+                      </td>
+                      <td className="px-3 py-2 font-mono text-slate-600 dark:text-slate-400">{r.clog}</td>
+                      <td className="px-3 py-2 font-mono text-slate-600 dark:text-slate-400">{r.auto || '—'}</td>
+                      <td className="px-3 py-2">
+                        {r.type === 'automation'
+                          ? <span className="badge bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">Automation</span>
+                          : <span className="badge bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400">Manual</span>}
+                      </td>
+                      <td className="px-3 py-2 text-right font-medium text-slate-700 dark:text-slate-300">{fmtFull(r.dialed)}</td>
+                      <td className={`px-3 py-2 text-right font-semibold ${connectColor(r.connect_pct)}`}>{fmtPct(r.connect_pct)}</td>
+                      <td className="px-4 py-2 text-slate-600 dark:text-slate-400 max-w-[300px]">{campaignOffReason(r)}</td>
                     </tr>
                   ))}
                 </tbody>

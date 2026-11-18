@@ -95,12 +95,12 @@ function onData(v) {
 
   // ── campaign (row grain) — drill-down + adoption/config ──
   let cp = camps.get(clog)
-  if (!cp) { cp = { iid, server, maxC: 0, out: zero(), dmin: date, dmax: date, isAutomation }; camps.set(clog, cp) }
+  if (!cp) { cp = { iid, server, maxC: 0, out: zero(), dmin: date, dmax: date, isAutomation, auto: new Set() }; camps.set(clog, cp) }
   if (date < cp.dmin) cp.dmin = date
   if (date > cp.dmax) cp.dmax = date
   if (C > cp.maxC) cp.maxC = C
   // if any attempt is automation, mark campaign as automation
-  if (isAutomation) cp.isAutomation = true
+  if (isAutomation) { cp.isAutomation = true; cp.auto.add(v.automation_list_id.trim()) }
   cp.out.dialed++; cp.out.attempts += attempts
   let cb = null
   if (connected) cb = attempts <= 1 ? 'first_attempt' : 'r' + Math.min(attempts - 1, 5)
@@ -281,6 +281,13 @@ function build() {
   mkdirSync(DATA, { recursive: true }); mkdirSync(CAMP, { recursive: true })
   writeFileSync(join(DATA, 'summary.json'), JSON.stringify(summary))
   writeFileSync(join(DATA, 'facts.json'), JSON.stringify(facts))
+  // retry-OFF campaigns (for the Campaigns-on-Retry ⓘ popup) — one row per communication_log_id
+  const retryOff = [...camps.entries()].filter(([, cp]) => cp.maxC === 0).map(([clog, cp]) => {
+    const o = finalize(cp.out)
+    return { iid: cp.iid, clog, auto: [...cp.auto].join(';'), type: cp.auto.size ? 'automation' : 'manual',
+      dialed: o.dialed, connected: o.connected, connect_pct: o.connect_pct, from: cp.dmin, to: cp.dmax }
+  }).sort((a, b) => b.dialed - a.dialed)
+  writeFileSync(join(DATA, 'retry_off_campaigns.json'), JSON.stringify(retryOff))
   for (const f of readdirSync(CAMP)) if (f.endsWith('.json')) rmSync(join(CAMP, f))
   for (const [iid, arr] of campaignsByInst) writeFileSync(join(CAMP, `${iid}.json`), JSON.stringify(arr))
 
