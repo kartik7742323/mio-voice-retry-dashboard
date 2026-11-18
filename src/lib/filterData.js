@@ -1,5 +1,6 @@
 import summary from '../data/summary.json'
 import facts from '../data/facts.json'
+import retryOff from '../data/retry_off_campaigns.json'
 
 // ── Filter dimensions (dummy; swap facts.json for real data later) ───────────
 export const AGENTS   = facts.agents
@@ -145,6 +146,22 @@ export function computeView({ college, jobType = 'all', from = DATE_MIN, to = DA
       return { ...i, ...o }
     })
 
+  // ── Feature-adoption ⓘ popups: same College + Job Type + date scope as the tiles ──
+  const campsInWin = CAMPAIGN_INDEX.filter(c =>
+    matchVal(college, c.iid) && (jobType === 'all' || c.job === jobType) && c.from <= to && c.to >= from)
+  const instAgg = new Map()
+  for (const c of campsInWin) {
+    let e = instAgg.get(c.iid); if (!e) { e = { campaigns: 0, retry: 0 }; instAgg.set(c.iid, e) }
+    e.campaigns++; if (c.retry) e.retry++
+  }
+  const nonRetryInstitutes = [...instAgg.entries()]
+    .filter(([, e]) => e.retry === 0)   // colleges with an active campaign in range but none on retry
+    .map(([iid, e]) => { const o = finalize(byIid.get(iid) || emptyOutcome()); return { iid, campaigns: e.campaigns, dialed: o.dialed, connect_pct: o.connect_pct } })
+    .sort((a, b) => b.dialed - a.dialed)
+  const offCampaigns = retryOff
+    .filter(r => matchVal(college, r.iid) && (jobType === 'all' || r.type === jobType) && r.from <= to && r.to >= from)
+    .sort((a, b) => b.dialed - a.dialed)
+
   return {
     ...summary,
     extracted_date: `${compactDate(from)}-${compactDate(to)}`,
@@ -153,6 +170,8 @@ export function computeView({ college, jobType = 'all', from = DATE_MIN, to = DA
     by_institution,
     periods: buildPeriods(matched, from, to),
     monthly,
+    nonRetryInstitutes,
+    offCampaigns,
   }
 }
 

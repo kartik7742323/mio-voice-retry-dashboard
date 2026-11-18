@@ -15,7 +15,6 @@ import AutomationAdoptionGap from '../components/AutomationAdoptionGap'
 import MonthlyConnectChart from '../components/MonthlyConnectChart'
 import { fmtNum, fmtPct, fmtFull, connectColor, formatDate, MODE_COLORS } from '../lib/format'
 import { institutionLabel } from '../lib/accounts'
-import retryOffCampaigns from '../data/retry_off_campaigns.json'
 import { downloadPeriodComparison, downloadNoAdoptionRisk } from '../lib/download'
 
 const col = createColumnHelper()
@@ -71,7 +70,6 @@ const NON_RETRY_REASONS = {
   428:  'Automation is paused — no campaign was triggered after the retry release.',
   6962: 'Retry is not enabled in automation because it is a regular-interval automation.',
 }
-const DEFAULT_NON_RETRY_REASON = 'No calls after the retry release — only testing calls (~5–10).'
 
 // Reasons a campaign (communication_log_id) has retry OFF — keyed by automation_list_id (the "Old Automation id").
 const CAMPAIGN_OFF_REASONS = {
@@ -172,16 +170,12 @@ export default function Overview({ data }) {
     .sort((x, y) => (y.connect_pct ?? 0) - (x.connect_pct ?? 0) || (y.dialed ?? 0) - (x.dialed ?? 0))
     .slice(0, 10)
 
-  // Colleges NOT using retry (for the Institutes-on-Retry ⓘ popup)
+  // ⓘ popups — use the date/college/job-type-scoped lists from the view so they match the tile counts
   const [showNonRetry, setShowNonRetry] = useState(false)
-  const nonAdopters = institutions
-    .filter(i => !i.retry_enabled && i.dialed > 0)
-    .sort((x, y) => (y.dialed ?? 0) - (x.dialed ?? 0))
+  const nonAdopters = data.nonRetryInstitutes || []
 
-  // Retry-OFF campaigns (for the Campaigns-on-Retry ⓘ popup) — scoped to the colleges in view
   const [showCampOff, setShowCampOff] = useState(false)
-  const viewIids = new Set(institutions.map(i => i.institution_id))
-  const campOffRows = retryOffCampaigns.filter(r => viewIids.has(r.iid))
+  const campOffRows = data.offCampaigns || []
 
   const retryTotal = g.r1 + g.r2 + g.r3 + g.r4 + g.r5
   const firstPct = g.dialed > 0 ? g.first_attempt / g.dialed * 100 : 0
@@ -453,7 +447,7 @@ export default function Overview({ data }) {
             <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100">Colleges not using Retry ({nonAdopters.length})</h2>
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Live colleges with voice calls but no retry-enabled campaign — with the reason retry isn't on.</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Colleges with a campaign active in the selected range but none on retry — matches the current filters.</p>
               </div>
               <button onClick={() => setShowNonRetry(false)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shrink-0">
                 <X size={16} />
@@ -472,15 +466,15 @@ export default function Overview({ data }) {
                 </thead>
                 <tbody>
                   {nonAdopters.map(i => (
-                    <tr key={i.institution_id} className="border-b border-slate-100 dark:border-slate-700/50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700/30">
+                    <tr key={i.iid} className="border-b border-slate-100 dark:border-slate-700/50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700/30">
                       <td className="px-4 py-2.5">
-                        <p className="font-medium text-slate-800 dark:text-slate-200">{institutionLabel(i.institution_id)}</p>
-                        <p className="text-[10px] text-slate-400 dark:text-slate-500">#{i.institution_id} · {i.server}</p>
+                        <p className="font-medium text-slate-800 dark:text-slate-200">{institutionLabel(i.iid)}</p>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500">#{i.iid}</p>
                       </td>
                       <td className="px-3 py-2.5 text-right text-slate-600 dark:text-slate-400">{fmtFull(i.campaigns)}</td>
                       <td className="px-3 py-2.5 text-right font-medium text-slate-700 dark:text-slate-300">{fmtFull(i.dialed)}</td>
                       <td className={`px-3 py-2.5 text-right font-semibold ${connectColor(i.connect_pct)}`}>{fmtPct(i.connect_pct)}</td>
-                      <td className="px-4 py-2.5 text-slate-600 dark:text-slate-400 max-w-[340px]">{NON_RETRY_REASONS[i.institution_id] || DEFAULT_NON_RETRY_REASON}</td>
+                      <td className="px-4 py-2.5 text-slate-600 dark:text-slate-400 max-w-[340px]">{NON_RETRY_REASONS[i.iid] || <span className="text-slate-300 dark:text-slate-600">—</span>}</td>
                     </tr>
                   ))}
                 </tbody>
