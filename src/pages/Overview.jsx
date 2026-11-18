@@ -12,6 +12,7 @@ import CumulativeConnectChart from '../components/CumulativeConnectChart'
 import Donut from '../components/Donut'
 import RetryCountChart from '../components/RetryCountChart'
 import AutomationAdoptionGap from '../components/AutomationAdoptionGap'
+import MonthlyConnectChart from '../components/MonthlyConnectChart'
 import { fmtNum, fmtPct, fmtFull, connectColor, formatDate, MODE_COLORS } from '../lib/format'
 import { institutionLabel } from '../lib/accounts'
 import retryOffCampaigns from '../data/retry_off_campaigns.json'
@@ -334,6 +335,17 @@ export default function Overview({ data }) {
         Lead-wise metrics — each unique lead counts once, and connects if it answered on any attempt (1st call or a retry).
         “Connect Lift” = share of leads that first connected on a retry rather than the first call.
       </p>
+
+      {/* ── Connection Rate Trend (monthly) ──────────────────────────── */}
+      <div className="card mb-7">
+        <div className="card-header">
+          <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Connection Rate Trend</h2>
+          <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Lead-wise connect rate by month · moves with the active filters</p>
+        </div>
+        <div className="card-body">
+          <MonthlyConnectChart data={data.monthly} height={280} />
+        </div>
+      </div>
 
       {/* ── Feature Adoption ─────────────────────────────────────────── */}
       <div className="flex items-center gap-2 mb-3">

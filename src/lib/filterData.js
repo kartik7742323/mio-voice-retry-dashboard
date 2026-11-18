@@ -18,8 +18,10 @@ export function compactDate(iso) {
   return `${parseInt(d, 10)}${MONTHS[parseInt(m, 10) - 1]}${y.slice(2)}`
 }
 
+const CAMPAIGN_INDEX = summary.campaign_index || []
+
 function emptyOutcome() {
-  return { dialed: 0, first_attempt: 0, r1: 0, r2: 0, r3: 0, r4: 0, r5: 0, retry_exhausted: 0, next_retry_scheduled: 0, attempts: 0 }
+  return { dialed: 0, first_attempt: 0, r1: 0, r2: 0, r3: 0, r4: 0, r5: 0, retry_exhausted: 0, next_retry_scheduled: 0, attempts: 0, dialed_in_retry_campaigns: 0 }
 }
 function addRow(acc, r) {
   acc.dialed += r.dialed
@@ -28,6 +30,7 @@ function addRow(acc, r) {
   acc.retry_exhausted += r.retry_exhausted
   acc.next_retry_scheduled += r.next_retry_scheduled
   acc.attempts += (r.attempts || 0)
+  acc.dialed_in_retry_campaigns += (r.dialed_in_retry_campaigns || 0)
 }
 /** finalise an accumulated outcome into the {…, connected, connect_pct, connect_lift_pct} shape */
 function finalize(o) {
@@ -54,84 +57,36 @@ export function matchVal(sel, val) {
   return sel.op === 'nin' ? !has : has
 }
 
-/** Adoption is a configuration snapshot → scoped by College and Job Type. */
-function buildAdoption(college, jobType = 'all') {
-  // No filters → return global snapshot (unchanged)
-  const hasCollegeFilter = college && college.values && college.values.length > 0
-  const hasJobTypeFilter = jobType && jobType !== 'all'
-
-  if (!hasCollegeFilter && !hasJobTypeFilter) return summary.adoption
-
-  // Filter institutions by college
-  const matched = BASE_INST.filter(i => matchVal(college, i.institution_id))
-
-  // If job_type is selected, filter metrics from the facts rows
-  if (hasJobTypeFilter) {
-    const filteredRows = ROWS.filter(r =>
-      matchVal(college, r.iid) && r.job_type === jobType
-    )
-
-    // Count unique institutions, campaigns, leads in filtered data
-    const insts = new Set(filteredRows.map(r => r.iid))
-    const dialed_total = filteredRows.reduce((sum, r) => sum + r.dialed, 0)
-    const dialed_retry = filteredRows.reduce((sum, r) => sum + (r.dialed_in_retry_campaigns || 0), 0)
-
-    // For campaigns and retry counts, estimate from institution data weighted by filtered dialed
-    const dialedByInst = new Map()
-    filteredRows.forEach(r => {
-      dialedByInst.set(r.iid, (dialedByInst.get(r.iid) || 0) + r.dialed)
-    })
-
-    let voice_institutions = 0
-    let retry_institutions = 0
-    let voice_campaigns = 0
-    let retry_campaigns = 0
-    let retryCountDist = { 1:0, 2:0, 3:0, 4:0, 5:0 }
-
-    for (const i of matched) {
-      if (!insts.has(i.institution_id)) continue
-      voice_institutions++
-      if (i.retry_enabled) retry_institutions++
-      voice_campaigns += i.campaigns || 0
-      retry_campaigns += i.retry_enabled_campaigns || 0
-      if ((i.retry_enabled_campaigns || 0) > 0) {
-        const bucket = Math.min(5, Math.max(1, Math.round(i.avg_configured_retries || 0))) || 1
-        retryCountDist[bucket] += i.retry_enabled_campaigns
-      }
-    }
-
-    return {
-      voice_institutions,
-      retry_institutions,
-      voice_campaigns,
-      retry_campaigns,
-      mode_immediate: 0,
-      mode_scheduled: 0,
-      retry_count_dist: retryCountDist,
-      dialed_retry,
-      dialed_total
-    }
+/**
+ * Feature Adoption, recomputed for the active College + Job Type + DATE range.
+ *  • Institutes / Campaigns on Retry → from the campaign index, counting campaigns whose
+ *    active span [from,to] overlaps the selected date range (and match college + job type).
+ *  • Leads Dialed via Retry → from the date-filtered facts (dialedTotal / dialedRetry passed in).
+ */
+function buildAdoption(college, jobType, from, to, dialedTotal, dialedRetry) {
+  const camps = CAMPAIGN_INDEX.filter(c =>
+    matchVal(college, c.iid) &&
+    (jobType === 'all' || c.job === jobType) &&
+    c.from <= to && c.to >= from        // campaign was active during the selected range
+  )
+  let retry_campaigns = 0
+  const retry_count_dist = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }
+  const voiceInst = new Set(), retryInst = new Set()
+  for (const c of camps) {
+    voiceInst.add(c.iid)
+    if (c.retry) { retry_campaigns++; retryInst.add(c.iid); retry_count_dist[Math.min(5, Math.max(1, c.conf))]++ }
   }
-
-  // College-only filter (no job_type)
-  const acc = { voice_institutions: 0, retry_institutions: 0, voice_campaigns: 0, retry_campaigns: 0,
-    mode_immediate: 0, mode_scheduled: 0, retry_count_dist: { 1:0,2:0,3:0,4:0,5:0 }, dialed_retry: 0, dialed_total: 0 }
-  for (const i of matched) {
-    acc.voice_institutions++
-    if (i.retry_enabled) acc.retry_institutions++
-    acc.voice_campaigns += i.campaigns || 0
-    const rc = i.retry_enabled_campaigns || 0
-    acc.retry_campaigns += rc
-    acc.dialed_retry += i.dialed || 0
-    acc.dialed_total += i.dialed_raw || 0
-    if (rc > 0) {
-      const bucket = Math.min(5, Math.max(1, Math.round(i.avg_configured_retries || 0))) || 1
-      acc.retry_count_dist[bucket] += rc
-    }
-    if (i.dominant_mode === 'immediate') acc.mode_immediate += rc
-    else if (i.dominant_mode === 'schedule') acc.mode_scheduled += rc
+  return {
+    voice_institutions: voiceInst.size,
+    retry_institutions: retryInst.size,
+    voice_campaigns: camps.length,
+    retry_campaigns,
+    mode_immediate: 0,
+    mode_scheduled: 0,
+    retry_count_dist,
+    dialed_retry: dialedRetry,
+    dialed_total: dialedTotal,
   }
-  return acc
 }
 
 /** Split the selected range in half → two comparable periods for Period Comparison. */
@@ -166,12 +121,20 @@ export function computeView({ college, jobType = 'all', from = DATE_MIN, to = DA
 
   const g = emptyOutcome()
   const byIid = new Map()
+  const byMonth = new Map()
   for (const r of matched) {
     addRow(g, r)
     let o = byIid.get(r.iid)
     if (!o) { o = emptyOutcome(); byIid.set(r.iid, o) }
     addRow(o, r)
+    const m = r.date.slice(0, 7)   // YYYY-MM
+    let mm = byMonth.get(m)
+    if (!mm) { mm = emptyOutcome(); byMonth.set(m, mm) }
+    addRow(mm, r)
   }
+  const monthly = [...byMonth.entries()]
+    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+    .map(([month, o]) => ({ month, ...finalize(o) }))
 
   const by_institution = BASE_INST
     .filter(i => matchVal(college, i.institution_id))
@@ -186,9 +149,10 @@ export function computeView({ college, jobType = 'all', from = DATE_MIN, to = DA
     ...summary,
     extracted_date: `${compactDate(from)}-${compactDate(to)}`,
     global: finalize(g),
-    adoption: buildAdoption(college, jobType),
+    adoption: buildAdoption(college, jobType, from, to, g.dialed, g.dialed_in_retry_campaigns),
     by_institution,
     periods: buildPeriods(matched, from, to),
+    monthly,
   }
 }
 

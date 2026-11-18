@@ -256,9 +256,12 @@ function build() {
     automation_adoption_rate: automation_enabled_colleges > 0 ? +(automation_adopted_colleges / automation_enabled_colleges * 100).toFixed(1) : 0,
   }
 
+  // compact per-campaign index so Feature Adoption can be recomputed for any date range
+  const campaign_index = [...camps.values()].map(cp => ({ iid: cp.iid, retry: cp.maxC > 0 ? 1 : 0, conf: cp.maxC, from: cp.dmin, to: cp.dmax, job: cp.isAutomation ? 'automation' : 'manual' }))
+
   const summary = {
     extracted_date: `${compactDate(date_min)}-${compactDate(date_max)}`,
-    synthetic: false, adoption, global: finalize(gOut), periods: [], by_server: [], by_institution,
+    synthetic: false, adoption, global: finalize(gOut), periods: [], by_server: [], by_institution, campaign_index,
   }
   const facts = { synthetic: false, agents: [], date_min, date_max, rows }
 
