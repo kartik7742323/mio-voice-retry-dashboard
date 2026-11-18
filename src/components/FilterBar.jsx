@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Building2, Calendar, X, SlidersHorizontal } from 'lucide-react'
+import { Building2, Calendar, X, SlidersHorizontal, Zap } from 'lucide-react'
 import { useFilter } from '../context/FilterContext'
 import { DATE_MIN, DATE_MAX, collegeOptions } from '../lib/filterData'
 import { institutionLabel } from '../lib/accounts'
@@ -54,6 +54,21 @@ export default function FilterBar() {
             selection={filters.college}
             onChange={sel => update({ college: sel })}
           />
+        </div>
+
+        {/* Job Type */}
+        <div className="w-full sm:w-40">
+          <Field icon={Zap}>
+            <select
+              className={selectClass}
+              value={filters.jobType || 'all'}
+              onChange={e => update({ jobType: e.target.value })}
+            >
+              <option value="all">All / Bulk + Auto</option>
+              <option value="automation">Automation</option>
+              <option value="manual">Bulk (Manual)</option>
+            </select>
+          </Field>
         </div>
 
         {/* Date range */}

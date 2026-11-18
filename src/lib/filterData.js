@@ -54,12 +54,66 @@ export function matchVal(sel, val) {
   return sel.op === 'nin' ? !has : has
 }
 
-/** Adoption is a configuration snapshot → scoped by College only (not agent/date). */
-function buildAdoption(college) {
-  // No college constraint → exact global snapshot.
-  if (!college || !college.values || college.values.length === 0) return summary.adoption
+/** Adoption is a configuration snapshot → scoped by College and Job Type. */
+function buildAdoption(college, jobType = 'all') {
+  // No filters → return global snapshot (unchanged)
+  const hasCollegeFilter = college && college.values && college.values.length > 0
+  const hasJobTypeFilter = jobType && jobType !== 'all'
 
+  if (!hasCollegeFilter && !hasJobTypeFilter) return summary.adoption
+
+  // Filter institutions by college
   const matched = BASE_INST.filter(i => matchVal(college, i.institution_id))
+
+  // If job_type is selected, filter metrics from the facts rows
+  if (hasJobTypeFilter) {
+    const filteredRows = ROWS.filter(r =>
+      matchVal(college, r.iid) && r.job_type === jobType
+    )
+
+    // Count unique institutions, campaigns, leads in filtered data
+    const insts = new Set(filteredRows.map(r => r.iid))
+    const dialed_total = filteredRows.reduce((sum, r) => sum + r.dialed, 0)
+    const dialed_retry = filteredRows.reduce((sum, r) => sum + (r.dialed_in_retry_campaigns || 0), 0)
+
+    // For campaigns and retry counts, estimate from institution data weighted by filtered dialed
+    const dialedByInst = new Map()
+    filteredRows.forEach(r => {
+      dialedByInst.set(r.iid, (dialedByInst.get(r.iid) || 0) + r.dialed)
+    })
+
+    let voice_institutions = 0
+    let retry_institutions = 0
+    let voice_campaigns = 0
+    let retry_campaigns = 0
+    let retryCountDist = { 1:0, 2:0, 3:0, 4:0, 5:0 }
+
+    for (const i of matched) {
+      if (!insts.has(i.institution_id)) continue
+      voice_institutions++
+      if (i.retry_enabled) retry_institutions++
+      voice_campaigns += i.campaigns || 0
+      retry_campaigns += i.retry_enabled_campaigns || 0
+      if ((i.retry_enabled_campaigns || 0) > 0) {
+        const bucket = Math.min(5, Math.max(1, Math.round(i.avg_configured_retries || 0))) || 1
+        retryCountDist[bucket] += i.retry_enabled_campaigns
+      }
+    }
+
+    return {
+      voice_institutions,
+      retry_institutions,
+      voice_campaigns,
+      retry_campaigns,
+      mode_immediate: 0,
+      mode_scheduled: 0,
+      retry_count_dist: retryCountDist,
+      dialed_retry,
+      dialed_total
+    }
+  }
+
+  // College-only filter (no job_type)
   const acc = { voice_institutions: 0, retry_institutions: 0, voice_campaigns: 0, retry_campaigns: 0,
     mode_immediate: 0, mode_scheduled: 0, retry_count_dist: { 1:0,2:0,3:0,4:0,5:0 }, dialed_retry: 0, dialed_total: 0 }
   for (const i of matched) {
@@ -103,9 +157,10 @@ function buildPeriods(matched, from, to) {
  * Roll the fact table up under the active filter and return a summary.json-shaped
  * view the existing pages already know how to render.
  */
-export function computeView({ college, from = DATE_MIN, to = DATE_MAX } = {}) {
+export function computeView({ college, jobType = 'all', from = DATE_MIN, to = DATE_MAX } = {}) {
   const matched = ROWS.filter(r =>
     matchVal(college, r.iid) &&
+    (jobType === 'all' || r.job_type === jobType) &&
     r.date >= from && r.date <= to
   )
 
@@ -131,7 +186,7 @@ export function computeView({ college, from = DATE_MIN, to = DATE_MAX } = {}) {
     ...summary,
     extracted_date: `${compactDate(from)}-${compactDate(to)}`,
     global: finalize(g),
-    adoption: buildAdoption(college),
+    adoption: buildAdoption(college, jobType),
     by_institution,
     periods: buildPeriods(matched, from, to),
   }
@@ -139,15 +194,16 @@ export function computeView({ college, from = DATE_MIN, to = DATE_MAX } = {}) {
 
 /**
  * Single-institution view for the detail page. Ignores the College filter
- * (the URL already scopes to one institution) but honours Agent + Date, so the
+ * (the URL already scopes to one institution) but honours Job Type + Date, so the
  * detail cards move with those filters. Always resolves the institution config.
  */
-export function computeInstitution(instId, { from = DATE_MIN, to = DATE_MAX } = {}) {
+export function computeInstitution(instId, { jobType = 'all', from = DATE_MIN, to = DATE_MAX } = {}) {
   const base = BASE_INST.find(i => i.institution_id === instId)
   if (!base) return null
   const o = emptyOutcome()
   for (const r of ROWS) {
     if (r.iid !== instId) continue
+    if (jobType !== 'all' && r.job_type !== jobType) continue
     if (r.date < from || r.date > to) continue
     addRow(o, r)
   }

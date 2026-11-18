@@ -4,6 +4,7 @@ import { computeView, DATE_MIN, DATE_MAX } from '../lib/filterData'
 const EMPTY_SEL = { op: 'in', values: [] }
 const DEFAULTS = {
   college: { ...EMPTY_SEL },
+  jobType: 'all',  // 'all' | 'automation' | 'manual'
   from: DATE_MIN,
   to: DATE_MAX,
 }
@@ -20,6 +21,7 @@ export function FilterProvider({ children }) {
 
   const activeCount =
     (filters.college?.values?.length ? 1 : 0) +
+    (filters.jobType && filters.jobType !== 'all' ? 1 : 0) +
     (filters.from !== DATE_MIN || filters.to !== DATE_MAX ? 1 : 0)
 
   const value = useMemo(

@@ -22,15 +22,37 @@ const SCRIPTS = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(SCRIPTS, '..')
 const FILE = 'C:/Users/Kartik/Downloads/retry_data_and_adoption.csv'
 const NEED = ['tenant_id', 'source_db', 'communication_log_id', 'added_on', 'created_on',
-  'answered', 'status', 'retry_count', 'configured_retry_count', 'user_id']
+  'answered', 'status', 'retry_count', 'configured_retry_count', 'user_id', 'automation_list_id']
 
 const ALLOW = (() => {
   try { return new Set(JSON.parse(readFileSync(join(SCRIPTS, '_live_ids.json'), 'utf8'))) }
   catch { return null }
 })()
 
+// Load automation retry enablement dates
+const AUTOMATION_ENABLEMENT = (() => {
+  try {
+    const data = JSON.parse(readFileSync(join(SCRIPTS, 'automation_retry_enablement.json'), 'utf8'))
+    const map = new Map()
+    for (const [wave, waveData] of Object.entries(data)) {
+      for (const collegeId of waveData.colleges) {
+        map.set(collegeId, { go_live_date: waveData.go_live_date, wave })
+      }
+    }
+    return map
+  } catch { return new Map() }
+})()
+
 // Strictly report from this date onward (call attempts before it are excluded).
 const MIN_DATE = '2026-07-13'
+
+// Two-source stitch: existing history up to SPLIT, new incremental export from SPLIT onward.
+const SPLIT = '2026-10-26'
+const SOURCES = [
+  { file: 'C:/Users/Kartik/Downloads/retry_data_and_adoption.csv', from: MIN_DATE, to: SPLIT },  // 13 Jul – 25 Oct
+  { file: 'C:/Users/Kartik/Downloads/retry.csv',                   from: SPLIT,    to: null  },  // 26 Oct – 17 Nov
+]
+let curFrom = MIN_DATE, curTo = null
 
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
 const compactDate = iso => { const [y, m, d] = iso.split('-'); return `${+d}${MONTHS[+m - 1]}${y.slice(2)}` }
@@ -63,17 +85,22 @@ function onData(v) {
   const server = (v.source_db || '').replace(/^communication_/, '') || 'unknown'
   const aon = (+v.added_on) || (+v.created_on) || 0
   const date = isoOf(v.added_on) || isoOf(v.created_on)
-  if (!date || date < MIN_DATE) return   // strictly 13 Jul onward
+  if (!date || date < curFrom || (curTo && date >= curTo)) return   // date window for the active source
   const connected = v.answered === '1' || v.status === 'completed' || v.status === 'answered'
   let attempts = parseInt(v.retry_count, 10); if (!attempts || attempts < 1) attempts = 1
   const C = parseInt(v.configured_retry_count, 10) || 0
 
+  // ── automation detection ──
+  const isAutomation = !!(v.automation_list_id && v.automation_list_id.trim())
+
   // ── campaign (row grain) — drill-down + adoption/config ──
   let cp = camps.get(clog)
-  if (!cp) { cp = { iid, server, maxC: 0, out: zero(), dmin: date, dmax: date }; camps.set(clog, cp) }
+  if (!cp) { cp = { iid, server, maxC: 0, out: zero(), dmin: date, dmax: date, isAutomation }; camps.set(clog, cp) }
   if (date < cp.dmin) cp.dmin = date
   if (date > cp.dmax) cp.dmax = date
   if (C > cp.maxC) cp.maxC = C
+  // if any attempt is automation, mark campaign as automation
+  if (isAutomation) cp.isAutomation = true
   cp.out.dialed++; cp.out.attempts += attempts
   let cb = null
   if (connected) cb = attempts <= 1 ? 'first_attempt' : 'r' + Math.min(attempts - 1, 5)
@@ -84,9 +111,10 @@ function onData(v) {
   // ── lead (unique) grain ──
   const lk = iid + '\u0001' + user
   let L = leads.get(lk)
-  if (!L) { L = { iid, server, dateMin: date || '9999-99-99', attempts: 0, connected: false, connTime: Infinity, connIdx: 0, retryEligible: false, exhausted: false, scheduled: false }; leads.set(lk, L) }
+  if (!L) { L = { iid, server, dateMin: date || '9999-99-99', attempts: 0, connected: false, connTime: Infinity, connIdx: 0, retryEligible: false, exhausted: false, scheduled: false, isAutomation: false }; leads.set(lk, L) }
   L.attempts += attempts
   if (C > 0) L.retryEligible = true
+  if (isAutomation) L.isAutomation = true
   if (date && date < L.dateMin) L.dateMin = date
   if (connected) {
     if (aon < L.connTime) { L.connTime = aon; L.connIdx = Math.min(attempts, 6) }  // attempt within earliest connecting campaign
@@ -132,11 +160,19 @@ function feed(chunk) {
   }
 }
 
-console.log('Reading', FILE, ALLOW ? `(live-clients only: ${ALLOW.size})` : '(all colleges)', '…')
-const stream = createReadStream(FILE, { encoding: 'utf8' })
-stream.on('data', feed)
-stream.on('error', e => { console.error('READ ERROR', e); process.exit(1) })
-stream.on('end', () => { if (cur !== '' || fieldIdx > 0) endRow(); build() })
+function resetParser() { header = null; needIdx = null; fieldIdx = 0; cur = ''; inQ = false; pending = false; rowVals = {}; hdr = [] }
+function processFile(src) {
+  return new Promise((resolve, reject) => {
+    curFrom = src.from; curTo = src.to; resetParser()
+    console.log(`Reading ${src.file}  [${src.from} → ${src.to || 'end'}]  ${ALLOW ? `(live: ${ALLOW.size})` : '(all)'} …`)
+    const stream = createReadStream(src.file, { encoding: 'utf8' })
+    stream.on('data', feed)
+    stream.on('error', reject)
+    stream.on('end', () => { if (cur !== '' || fieldIdx > 0) endRow(); resolve() })
+  })
+}
+for (const src of SOURCES) await processFile(src)
+build()
 
 // ── post-processing → dashboard data files ───────────────────────────────────
 function build() {
@@ -144,24 +180,30 @@ function build() {
 
   // lead-level rollup → facts (iid × first-dial date), per-college totals, global
   const factMap = new Map(), collegeLead = new Map()
-  let leadsTotal = 0, leadsRetry = 0
+  let leadsTotal = 0, leadsRetry = 0, leadsInRetryEnabledCampaigns = 0
   for (const [, L] of leads) {
-    leadsTotal++; if (L.retryEligible) leadsRetry++
+    leadsTotal++
+    if (L.retryEligible) leadsRetry++
+    if (L.retryEligible) leadsInRetryEnabledCampaigns++  // leads in retry-enabled campaigns
     const o = leadOutcome(L)
     let c = collegeLead.get(L.iid)
-    if (!c) { c = { server: L.server, ...zero() }; collegeLead.set(L.iid, c) }
+    if (!c) { c = { server: L.server, ...zero(), isAutomation: false, dialed_in_retry_campaigns: 0 }; collegeLead.set(L.iid, c) }
     c.dialed++; c.attempts += L.attempts; addBucket(c, o)
+    if (L.retryEligible) c.dialed_in_retry_campaigns++
+    if (L.isAutomation) c.isAutomation = true
     const date = (L.dateMin && L.dateMin !== '9999-99-99') ? L.dateMin : null
     if (date) {
       const key = L.iid + '\u0001' + date
       let f = factMap.get(key)
-      if (!f) { f = { iid: L.iid, server: L.server, date, ...zero() }; factMap.set(key, f) }
+      if (!f) { f = { iid: L.iid, server: L.server, date, ...zero(), isAutomation: false, dialed_in_retry_campaigns: 0 }; factMap.set(key, f) }
       f.dialed++; f.attempts += L.attempts; addBucket(f, o)
+      if (L.retryEligible) f.dialed_in_retry_campaigns++
+      if (L.isAutomation) f.isAutomation = true
     }
   }
 
   const rows = [...factMap.values()].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : a.iid - b.iid)
-  rows.forEach((r, i) => { r.id = i })
+  rows.forEach((r, i) => { r.id = i; r.job_type = r.isAutomation ? 'automation' : 'manual' })
   const dates = rows.map(r => r.date)
   const date_min = dates.reduce((m, d) => d < m ? d : m, dates[0])
   const date_max = dates.reduce((m, d) => d > m ? d : m, dates[0])
@@ -177,10 +219,14 @@ function build() {
   const by_institution = [...collegeLead.entries()].map(([iid, c]) => {
     const cc = campsByCollege.get(iid) || { n: 0, retryN: 0, confSum: 0 }
     const fin = finalize(c)
+    const enablement = AUTOMATION_ENABLEMENT.get(iid)
     return { institution_id: iid, server: c.server, campaigns: cc.n,
       retry_enabled_campaigns: cc.retryN, retry_enabled: cc.retryN > 0, dominant_mode: null,
       avg_configured_retries: cc.retryN ? +(cc.confSum / cc.retryN).toFixed(1) : 0,
-      dialed_raw: c.dialed, first_attempt_raw: c.first_attempt, ...fin }
+      dialed_raw: c.dialed, first_attempt_raw: c.first_attempt,
+      automation_retry_enabled: !!enablement, automation_retry_enabled_date: enablement?.go_live_date, automation_retry_wave: enablement?.wave,
+      automation_retry_adopted: c.isAutomation && cc.retryN > 0,
+      ...fin }
   }).sort((a, b) => b.dialed_raw - a.dialed_raw)
 
   const gOut = zero(); for (const [, c] of collegeLead) addOut(gOut, c)
@@ -190,6 +236,14 @@ function build() {
   for (const [, cp] of camps) if (cp.maxC > 0) retryCountDist[Math.min(5, Math.max(1, cp.maxC))]++
   const retryCamps = [...camps.values()].filter(c => c.maxC > 0).length
 
+  // Automation enablement tracking
+  let automation_enabled_colleges = 0
+  let automation_adopted_colleges = 0
+  for (const inst of by_institution) {
+    if (inst.automation_retry_enabled) automation_enabled_colleges++
+    if (inst.automation_retry_adopted) automation_adopted_colleges++
+  }
+
   const adoption = {
     voice_institutions: collegeLead.size,
     retry_institutions: retryInstitutions,
@@ -197,7 +251,9 @@ function build() {
     retry_campaigns: retryCamps,
     mode_immediate: 0, mode_scheduled: 0,
     retry_count_dist: retryCountDist,
-    dialed_retry: leadsRetry, dialed_total: leadsTotal,
+    dialed_retry: leadsInRetryEnabledCampaigns, dialed_total: leadsTotal,
+    automation_enabled_colleges, automation_adopted_colleges,
+    automation_adoption_rate: automation_enabled_colleges > 0 ? +(automation_adopted_colleges / automation_enabled_colleges * 100).toFixed(1) : 0,
   }
 
   const summary = {
@@ -211,6 +267,7 @@ function build() {
   for (const [clog, cp] of camps) {
     const o = finalize(cp.out)
     const row = { campaign_id: clog, date: cp.dmin, date_end: cp.dmax, retry_enabled: cp.maxC > 0 ? 1 : 0, mode: null, configured_retries: cp.maxC,
+      job_type: cp.isAutomation ? 'automation' : 'manual',
       dialed: o.dialed, connected: o.connected, not_connected: o.not_connected,
       first_attempt: o.first_attempt, r1: o.r1, r2: o.r2, r3: o.r3, r4: o.r4, r5: o.r5,
       retry_exhausted: o.retry_exhausted, next_retry_scheduled: o.next_retry_scheduled,

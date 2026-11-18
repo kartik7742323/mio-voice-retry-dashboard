@@ -11,6 +11,7 @@ import ConnectProgressionChart from '../components/ConnectProgressionChart'
 import CumulativeConnectChart from '../components/CumulativeConnectChart'
 import Donut from '../components/Donut'
 import RetryCountChart from '../components/RetryCountChart'
+import AutomationAdoptionGap from '../components/AutomationAdoptionGap'
 import { fmtNum, fmtPct, fmtFull, connectColor, formatDate, MODE_COLORS } from '../lib/format'
 import { institutionLabel } from '../lib/accounts'
 import { downloadPeriodComparison, downloadNoAdoptionRisk } from '../lib/download'
@@ -296,6 +297,9 @@ export default function Overview({ data }) {
           </div>
         </div>
       </div>
+
+      {/* Automation Adoption Gap */}
+      <AutomationAdoptionGap data={data} />
 
       {/* Period Comparison */}
       {data.periods?.length >= 2 && (
