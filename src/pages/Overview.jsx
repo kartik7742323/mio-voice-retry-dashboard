@@ -72,12 +72,44 @@ const NON_RETRY_REASONS = {
 }
 const DEFAULT_NON_RETRY_REASON = 'No calls after the retry release — only testing calls (~5–10).'
 
-// Reasons a campaign (communication_log_id) has retry OFF — keyed by automation_list_id.
+// Reasons a campaign (communication_log_id) has retry OFF — keyed by automation_list_id (the "Old Automation id").
 const CAMPAIGN_OFF_REASONS = {
+  // Direct reasons
   '7608':  'Automation has been completed — hence no retries for its jobs.',
   '56299': 'Regular-interval job — retry is not enabled on it.',
   '56775': 'Automation completed.',
   '56158': 'Regular-interval automation.',
+  // Old (no-retry) automation paused → replaced with a new retry-enabled automation
+  '9903':  'Old automation paused → replaced with retry-enabled automation 10389 (08 Oct 2026).',
+  '56887': 'Old automation paused → replaced with retry-enabled automation 58073 (08 Oct 2026).',
+  '10184': 'Old automation paused → replaced with retry-enabled automation 10792 (14 Oct 2026).',
+  '9882':  'Old automation paused → replaced with retry-enabled automation 10793 (14 Oct 2026).',
+  '7487':  'Old automation paused → replaced with retry-enabled automation 8429 (14 Oct 2026).',
+  '7564':  'Old automation paused → replaced with retry-enabled automation 8430 (08 Oct 2026).',
+  '7568':  'Old automation paused → replaced with retry-enabled automation 8431 (08 Oct 2026).',
+  '57472': 'Old automation paused → replaced with retry-enabled automation 58078 (08 Oct 2026).',
+  '57899': 'Old automation paused → replaced with retry-enabled automation 58081 (08 Oct 2026).',
+  '57923': 'Old automation paused → replaced with retry-enabled automation 58082 (08 Oct 2026).',
+  '8177':  'Old automation paused → replaced with retry-enabled automation 8432 (08 Oct 2026).',
+  '10261': 'Old automation paused → replaced with retry-enabled automation 10393 (14 Oct 2026).',
+  '10156': 'Old automation paused → replaced with retry-enabled automation 10801 (14 Oct 2026).',
+  '57574': 'Old automation paused → replaced with retry-enabled automation 58083 (08 Oct 2026).',
+  '7808':  'Old automation paused → replaced with retry-enabled automation 10803 (14 Oct 2026).',
+  '56502': 'Old automation paused → replaced with retry-enabled automation 58084 (14 Oct 2026).',
+  '7838':  'Old automation paused → replaced with retry-enabled automation 8433 (08 Oct 2026).',
+  // Paused / migration in progress (no new automation yet)
+  '57241': 'Old automation paused — retry-enabled replacement in progress.',
+  '49649': 'Retry-enabled migration pending — old automation not yet replaced.',
+  // Replacement blocked
+  '10246': 'Retry-enabled replacement not created — automation limit exhausted.',
+  '9769':  'Retry-enabled replacement not created — automation limit exhausted.',
+  '10308': 'Retry-enabled replacement not created — automation limit exhausted.',
+  '7424':  'Retry-enabled replacement not created — automation limit exhausted.',
+  '9425':  'Migration to a retry-enabled automation is deferred.',
+  '9718':  'Migration to a retry-enabled automation is deferred.',
+  // Retry already enabled on the current automation (these were earlier runs)
+  '10296': 'Retry already enabled on the current automation — these were earlier runs before enablement.',
+  '57675': 'Retry already enabled on the current automation — these were earlier runs before enablement.',
 }
 const MANUAL_OFF_REASON = 'Unidentified — email will be sent to CS to explain the importance of retry so the client doesn’t miss using it.'
 const AUTOMATION_OFF_DEFAULT = 'Automation — retry not enabled (reason to be confirmed with CS).'
