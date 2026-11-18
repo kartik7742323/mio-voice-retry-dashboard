@@ -112,11 +112,10 @@ const CAMPAIGN_OFF_REASONS = {
   '57675': 'Retry already enabled on the current automation — these were earlier runs before enablement.',
 }
 const MANUAL_OFF_REASON = 'Unidentified — email will be sent to CS to explain the importance of retry so the client doesn’t miss using it.'
-const AUTOMATION_OFF_DEFAULT = 'Automation — retry not enabled (reason to be confirmed with CS).'
 function campaignOffReason(row) {
   if (row.type !== 'automation') return MANUAL_OFF_REASON
   for (const id of String(row.auto || '').split(';')) if (CAMPAIGN_OFF_REASONS[id]) return CAMPAIGN_OFF_REASONS[id]
-  return AUTOMATION_OFF_DEFAULT
+  return ''   // automation reason unknown → leave blank (do not assume)
 }
 
 function AdoptionTile({ icon: Icon, label, value, total, pct, tone = 'indigo', onInfo }) {
@@ -523,7 +522,7 @@ export default function Overview({ data }) {
                       </td>
                       <td className="px-3 py-2 text-right font-medium text-slate-700 dark:text-slate-300">{fmtFull(r.dialed)}</td>
                       <td className={`px-3 py-2 text-right font-semibold ${connectColor(r.connect_pct)}`}>{fmtPct(r.connect_pct)}</td>
-                      <td className="px-4 py-2 text-slate-600 dark:text-slate-400 max-w-[300px]">{campaignOffReason(r)}</td>
+                      <td className="px-4 py-2 text-slate-600 dark:text-slate-400 max-w-[300px]">{campaignOffReason(r) || <span className="text-slate-300 dark:text-slate-600">—</span>}</td>
                     </tr>
                   ))}
                 </tbody>
